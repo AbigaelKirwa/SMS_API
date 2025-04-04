@@ -114,3 +114,24 @@ def send_bulk_sms():
 def get_messages():
     """API endpoint to get all messages"""
     return jsonify({"messages":messages})
+
+@app.route('/task/<task_id>', methods=['GET'])
+def get_task_status():
+    """API endpoint to get the status of a task"""
+    task = send_sms_task.AsyncResult(task_id)
+    if task.state == 'PENDING':
+        response = {
+            'state':task.state,
+            'status':str(task.info)
+        }
+    elif task.state == 'FAILURE':
+        response = {
+            'state':task.state,
+            'status':str(task.info)
+        }
+    else:
+        response = {
+            'state':task.state,
+            'status':str(task.info)
+        }
+    return jsonify(response)
