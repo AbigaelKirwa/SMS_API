@@ -32,7 +32,7 @@ SMS_SENDER_ID = os.getenv('SMS_SENDER_ID', '')
 
 @celery.task
 def send_sms_task(phone_number, message, provider_endpoint= None):
-    # Celery task to send an SMS to the specified phone number
+    """ Celery task to send an SMS to the specified phone number """
     try:
         # use provider-specific enpoint if provided otherwise use default
         endpoint = provider_endpoint if provider_endpoint else SMS_API_ENDPOINT
@@ -69,3 +69,43 @@ def send_sms_task(phone_number, message, provider_endpoint= None):
             "phone_number":phone_number
         }
 
+@app.route('/send-bulk-sms', methods=['POST'])
+def send_bulk_sms():
+    """ api endpoint to send the same sms to different users """
+    data = request.get_json()
+
+    if not data:
+        return jsonify({"error: request must contain JSON DATA"}), 400
+    
+    # check for required fields
+    if 'phone_numbers' not in data:
+        return jsonify({"error: missing required field phone_numbers"}), 400
+    if 'message' not in data:
+        return jsonify({"error: missing required field message"}), 400
+    if not isinstance(data[phone_numbers], list):
+        return jsonify({"error: phone numbers must be a list"}), 400
+
+    # fetch the data from the request and store in variables
+    phone_numbers = data['phone_numbers']
+    message = data['message']
+    provider_endpoint = data.get('provider_enpoint', none)
+
+    # creating an empty list that will store task ids
+    task_ids=[]
+
+    # queue an sms task for every phone number
+    for phone_number in phone_numbers:
+        #store the message
+        messages.append({
+            "phone_number":phone_number,
+            "message":message,
+        })
+    
+    # calling the celery function that will interact with the message API
+    task = send_sms_task.delay(phone_number, message, provider_endpoint)
+    task_ids.append({"phone_number":phone_number, "task_id":task_id})
+
+    return jsonify({
+        "status":f"Bulk SMS successfully sent for ${len(phone_numbers)} recepients"
+        "tasks": tasks_ids
+    })
