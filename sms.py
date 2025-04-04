@@ -1,4 +1,4 @@
-from flask import Flask, requests, jsonify
+from flask import Flask, request, jsonify
 from celery import Celery
 from dotenv import load_dotenv
 import requests
@@ -17,7 +17,7 @@ app.config['CELERY_RESULT_BACKEND'] = os.getenv('REDIS_URL', 'redis://localhost:
 #initialize celery 
 celery = Celery(
     app.name,
-    broker = app.config['CELERY_BROKER_URL']
+    broker = app.config['CELERY_BROKER_URL'],
     backend = app.config['CELERY_RESULT_BACKEND']
 )
 celery.conf.update(app.config)
@@ -106,7 +106,7 @@ def send_bulk_sms():
     task_ids.append({"phone_number":phone_number, "task_id":task_id})
 
     return jsonify({
-        "status":f"Bulk SMS successfully sent for ${len(phone_numbers)} recepients"
+        "status":f"Bulk SMS successfully sent for ${len(phone_numbers)} recepients",
         "tasks": tasks_ids
     })
 
@@ -135,3 +135,6 @@ def get_task_status():
             'status':str(task.info)
         }
     return jsonify(response)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
