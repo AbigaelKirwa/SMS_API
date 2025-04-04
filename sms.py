@@ -109,3 +109,8 @@ def send_bulk_sms():
         "status":f"Bulk SMS successfully sent for ${len(phone_numbers)} recepients"
         "tasks": tasks_ids
     })
+
+@app.route('/messages', methods=['GET'])
+def get_messages():
+    """API endpoint to get all messages"""
+    return jsonify({"messages":messages})
