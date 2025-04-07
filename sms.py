@@ -96,6 +96,22 @@ def save_message_to_db(phone_number, message, task_id):
     finally:
         conn.close()
 
+# update messages table in the db
+def update_message_status(task_id, status, provider_response=None, response_code=None):
+    """Update message status in database"""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            sql = """"
+                UPDATE sms_messages
+                SET status = %s, provider_response = %s, response_code = %s, updated_at = NOW()
+                WHERE task_id = %s
+            """
+            cursor.execute(sql, (status, provider_response, response_code, task_id))
+        conn.commit()
+    finally:
+        conn.close()
+
 @celery.task
 def send_sms_task(phone_number, message, provider_endpoint= None):
     """ Celery task to send an SMS to the specified phone number """
