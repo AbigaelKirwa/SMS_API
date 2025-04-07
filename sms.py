@@ -81,6 +81,21 @@ def create_messages_table():
 with app.app_context():
     create_messages_table()
 
+# save messages to the db
+def save_message_to_db(phone_number, message, task_id):
+    """Save message to the database"""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            sql = """
+                INSERT INTO sms_messages(phone_number, message, task_id, status)
+                VALUES(%s, %s, %s, %s)
+            """
+            cursor.execute(sql, (phone_number, message_task, task_id, 'queued'))
+        conn.commit()
+    finally:
+        conn.close()
+
 @celery.task
 def send_sms_task(phone_number, message, provider_endpoint= None):
     """ Celery task to send an SMS to the specified phone number """
