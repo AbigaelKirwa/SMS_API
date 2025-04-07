@@ -12,8 +12,8 @@ load_dotenv()
 app = Flask(__name__)
 
 # configure celery
-app.config['CELERY_BROKER_URL'] = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
-app.config['CELERY_RESULT_BACKEND'] = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+app.config['CELERY_BROKER_URL'] = os.getenv('REDIS_URL')
+app.config['CELERY_RESULT_BACKEND'] = os.getenv('REDIS_URL')
 
 # database configuration
 DB_HOST = os.getenv('DB_HOST')
@@ -102,7 +102,7 @@ def update_message_status(task_id, status, provider_response=None, response_code
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            sql = """"
+            sql = """
                 UPDATE sms_messages
                 SET status = %s, provider_response = %s, response_code = %s, updated_at = NOW()
                 WHERE task_id = %s
@@ -112,8 +112,8 @@ def update_message_status(task_id, status, provider_response=None, response_code
     finally:
         conn.close()
 
-@celery.task
-def send_sms_task(phone_number, message, provider_endpoint= None):
+@celery.task(bind=True)
+def send_sms_task(self, phone_number, message, provider_endpoint= None):
     """ Celery task to send an SMS to the specified phone number """
     task_id = self.request.id
     try:
