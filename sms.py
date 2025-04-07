@@ -3,6 +3,7 @@ from celery import Celery
 from dotenv import load_dotenv
 import requests
 import os
+import pymysql
 
 # load content from .env file
 load_dotenv()
@@ -14,7 +15,15 @@ app = Flask(__name__)
 app.config['CELERY_BROKER_URL'] = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 app.config['CELERY_RESULT_BACKEND'] = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 
-#initialize celery 
+# database configuration
+DB_HOST = os.getenv('DB_HOST')
+DB_USER = os.getenv('DB_USER')
+DB_PASSWORD = os.getenv('DB_PASSWORD')
+DB_NAME = os.getenv('DB_NAME', 'sms_service')
+DB_PORT = int(os.getenv('DB_PORT', 3306))
+
+
+# initialize celery 
 celery = Celery(
     app.name,
     broker = app.config['CELERY_BROKER_URL'],
@@ -22,20 +31,38 @@ celery = Celery(
 )
 celery.conf.update(app.config)
 
-#store the message in memory
+# store the message in memory
 messages = []
 
-#sms provider configuration
-SMS_API_ENDPOINT = os.getenv('SMS_API_ENPOINT', '')
+# sms provider configuration
+SMS_API_ENDPOINT = os.getenv('SMS_API_ENDPOINT', '')
 SMS_API_KEY = os.getenv('SMS_API_KEY', '')
 SMS_SENDER_ID = os.getenv('SMS_SENDER_ID', '')
+
+# connect to db
+def get_db_connection():
+    """Create and return a database connection"""
+    return pymysql.connect(
+        host = DB_HOST,
+        user = DB_USER, 
+        password = DB_PASSWORD,
+        database = DB_NAME,
+        port = DB_PORT,
+        cursorclass = pymysql.cursors.DictCursor
+    )
+
+# create a table
+def create_messages_table():
+    """Create a message table if it does not exist"""
+    conn = get_db_connection()
+    
 
 @celery.task
 def send_sms_task(phone_number, message, provider_endpoint= None):
     """ Celery task to send an SMS to the specified phone number """
     try:
         # use provider-specific enpoint if provided otherwise use default
-        endpoint = provider_endpoint if provider_endpoint else SMS_API_ENDPOINT
+        endpoint = provider_endpoint if provider_endpoint else SMS_API_KEY
 
         if not endpoint:
             return {
@@ -82,13 +109,14 @@ def send_bulk_sms():
         return jsonify({"error: missing required field phone_numbers"}), 400
     if 'message' not in data:
         return jsonify({"error: missing required field message"}), 400
-    if not isinstance(data[phone_numbers], list):
+    if not isinstance(data['phone_numbers'], list):
         return jsonify({"error: phone numbers must be a list"}), 400
+
 
     # fetch the data from the request and store in variables
     phone_numbers = data['phone_numbers']
     message = data['message']
-    provider_endpoint = data.get('provider_enpoint', none)
+    provider_endpoint = data.get('provider_endpoint', None)
 
     # creating an empty list that will store task ids
     task_ids=[]
@@ -101,13 +129,13 @@ def send_bulk_sms():
             "message":message,
         })
     
-    # calling the celery function that will interact with the message API
-    task = send_sms_task.delay(phone_number, message, provider_endpoint)
-    task_ids.append({"phone_number":phone_number, "task_id":task_id})
+        # calling the celery function that will interact with the message API
+        task = send_sms_task.delay(phone_number, message, provider_endpoint)
+        task_ids.append({"phone_number":phone_number, "task_id":task.id})
 
     return jsonify({
-        "status":f"Bulk SMS successfully sent for ${len(phone_numbers)} recepients",
-        "tasks": tasks_ids
+        "status":f"Bulk SMS successfully sent for {len(phone_numbers)} recepients",
+        "tasks": task_ids
     })
 
 @app.route('/messages', methods=['GET'])
@@ -116,7 +144,7 @@ def get_messages():
     return jsonify({"messages":messages})
 
 @app.route('/task/<task_id>', methods=['GET'])
-def get_task_status():
+def get_task_status(task_id):
     """API endpoint to get the status of a task"""
     task = send_sms_task.AsyncResult(task_id)
     if task.state == 'PENDING':
