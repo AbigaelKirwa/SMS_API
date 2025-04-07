@@ -3,7 +3,8 @@ from celery import Celery
 from dotenv import load_dotenv
 import requests
 import os
-import pymysql
+from config import celery, SMS_API_ENDPOINT, SMS_API_KEY, SMS_SENDER_ID, SMS_ACCESS_KEY, SMS_CLIENT_ID
+from dbconfig import get_db_connection, create_messages_table
 
 # load content from .env file
 load_dotenv()
@@ -11,71 +12,8 @@ load_dotenv()
 # configure flask app
 app = Flask(__name__)
 
-# configure celery
-app.config['CELERY_BROKER_URL'] = os.getenv('REDIS_URL')
-app.config['CELERY_RESULT_BACKEND'] = os.getenv('REDIS_URL')
-
-# database configuration
-DB_HOST = os.getenv('DB_HOST')
-DB_USER = os.getenv('DB_USER')
-DB_PASSWORD = os.getenv('DB_PASSWORD')
-DB_NAME = os.getenv('DB_NAME')
-DB_PORT = int(os.getenv('DB_PORT'))
-
-
-# initialize celery 
-celery = Celery(
-    app.name,
-    broker = app.config['CELERY_BROKER_URL'],
-    backend = app.config['CELERY_RESULT_BACKEND']
-)
-celery.conf.update(app.config)
-
 # store the message in memory
-messages = []
-
-# sms provider configuration
-SMS_API_ENDPOINT = os.getenv('SMS_API_ENDPOINT', '')
-SMS_API_KEY = os.getenv('SMS_API_KEY', '')
-SMS_SENDER_ID = os.getenv('SMS_SENDER_ID', '')
-
-# connect to db
-def get_db_connection():
-    """Create and return a database connection"""
-    return pymysql.connect(
-        host = DB_HOST,
-        user = DB_USER, 
-        password = DB_PASSWORD,
-        database = DB_NAME,
-        port = DB_PORT,
-        cursorclass = pymysql.cursors.DictCursor
-    )
-
-# create a table
-def create_messages_table():
-    """Create a message table if it does not exist"""
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS sms_messages (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    phone_number VARCHAR(20) NOT NULL,
-                    message TEXT NOT NULL,
-                    status VARCHAR(20) DEFAULT 'pending',
-                    provider_response TEXT,
-                    response_code INT,
-                    task_id VARCHAR(50),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    INDEX idx_phone_number (phone_number),
-                    INDEX idx_status (status),
-                    INDEX idx_task_id (task_id)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            """)
-        conn.commit()
-    finally:
-        conn.close()
+messages = []   
     
 # create table when app starts
 with app.app_context():
@@ -131,14 +69,20 @@ def send_sms_task(self, phone_number, message, provider_endpoint= None):
 
         # this gives the payload structure of how data is sent to the API endpoint
         payload = {
-            "api_key": SMS_API_ENDPOINT,
-            "to": phone_number,
-            "message": message,
-            "sender_id": SMS_SENDER_ID
+            "ApiKey": SMS_API_ENDPOINT,
+            "Number": phone_number,
+            "Text": message,
+            "SenderId": SMS_SENDER_ID,
+            "ClientId": SMS_CLIENT_ID
+        }
+        # adding the header structure
+        header = {
+            "content-type": "application/json",
+            "AcessKey": SMS_ACCESS_KEY
         }
 
         # fetch the response after sending the payload
-        response = requests.post(endpoint, json=payload)
+        response = requests.post(endpoint, json=payload, headers=headers)
 
         result = {
             "status":response.status_code,
