@@ -58,7 +58,7 @@ def create_messages_table():
     try:
         with conn.cursor() as cursor:
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS sms_messages(
+                CREATE TABLE IF NOT EXISTS sms_messages (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     phone_number VARCHAR(20) NOT NULL,
                     message TEXT NOT NULL,
@@ -70,8 +70,8 @@ def create_messages_table():
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     INDEX idx_phone_number (phone_number),
                     INDEX idx_status (status),
-                    INDEX idx_task_id (task_id),
-                )ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                    INDEX idx_task_id (task_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """)
         conn.commit()
     finally:
@@ -120,7 +120,7 @@ def send_sms_task(phone_number, message, provider_endpoint= None):
         endpoint = provider_endpoint if provider_endpoint else SMS_API_KEY
 
         if not endpoint:
-            result {
+            result = {
                 "status":500,
                 "response":"No SMS Provider enpoint provided",
                 "success":False
@@ -210,13 +210,73 @@ def send_bulk_sms():
 
 @app.route('/messages', methods=['GET'])
 def get_messages():
-    """API endpoint to get all messages"""
-    return jsonify({"messages":messages})
+    """API endpoint to get all messages with optional filtering"""
+    # fetch argument from request and store in variables
+    status = request.args.get('status', None)
+    phone = request.args.get('phone', None)
+    limit = int(request.args.get('limit', 100))
+    offset = int(request.args.get('offset', 0))
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            query = "SELECT * FROM sms_messages WHERE 1=1"
+            # initialize an empty list to store all the parameters from the request
+            params = []
+
+            # check if status is present in argument
+            if status:
+                # concatenates status to query
+                query += " AND status =%s"
+                # adds status to params list
+                params.append(status)
+
+            # check if phone is present in arument
+            if phone:
+                # concatenates phone to query 
+                query += " AND phone =%s"
+                # adds phone to params list
+                params.append(phone)
+
+            # concatenates order by property
+            query += " ORDER BY created_at DESC LIMIT %s OFFSET %s"
+            params.extend([limit, offset]) 
+
+            cursor.execute(query, params)
+            messages = cursor.fetchall()
+
+            # convert datetime objects to strings for JSON serialization
+            for msg in messages:
+                if 'created_at' in msg and msg['created_at']:
+                    msg['created_at'] = msg['created_at'].isoformat()
+                if 'updated_at' in msg and msg['updated_at']:
+                    msg['updated_at'] = msg['updated_at'].isoformat()
+
+        return jsonify({"messages":messages, "count":len(messages)})
+    finally:
+        conn.close()
 
 @app.route('/task/<task_id>', methods=['GET'])
 def get_task_status(task_id):
     """API endpoint to get the status of a task"""
     task = send_sms_task.AsyncResult(task_id)
+
+    # get message details from DB
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM sms_messages WHERE task_id = %s", (task_id,)) 
+            message = cursor.fetchone()
+
+            if message:
+                # Convert datetime objects to strings
+                if 'created_at' in message and message['created_at']:
+                    message['created_at'] = message['created_at'].isoformat()
+                if 'updated_at' in message and message['updated_at']:
+                    message['updated_at'] = message['updated_at'].isoformat()
+    finally:
+        conn.close()
+
     if task.state == 'PENDING':
         response = {
             'state':task.state,
