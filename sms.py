@@ -197,6 +197,10 @@ def send_bulk_sms():
     
         # calling the celery function that will interact with the message API
         task = send_sms_task.delay(phone_number, message, provider_endpoint)
+
+        #save messages to db
+        save_message_to_db(phone_number, message, task.id)
+
         task_ids.append({"phone_number":phone_number, "task_id":task.id})
 
     return jsonify({
