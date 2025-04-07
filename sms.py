@@ -91,7 +91,7 @@ def save_message_to_db(phone_number, message, task_id):
                 INSERT INTO sms_messages(phone_number, message, task_id, status)
                 VALUES(%s, %s, %s, %s)
             """
-            cursor.execute(sql, (phone_number, message_task, task_id, 'queued'))
+            cursor.execute(sql, (phone_number, message, task_id, 'queued'))
         conn.commit()
     finally:
         conn.close()
@@ -115,9 +115,10 @@ def update_message_status(task_id, status, provider_response=None, response_code
 @celery.task
 def send_sms_task(phone_number, message, provider_endpoint= None):
     """ Celery task to send an SMS to the specified phone number """
+    task_id = self.request.id
     try:
         # use provider-specific enpoint if provided otherwise use default
-        endpoint = provider_endpoint if provider_endpoint else SMS_API_KEY
+        endpoint = provider_endpoint if provider_endpoint else SMS_API_ENDPOINT
 
         if not endpoint:
             result = {
@@ -168,15 +169,15 @@ def send_bulk_sms():
     data = request.get_json()
 
     if not data:
-        return jsonify({"error: request must contain JSON DATA"}), 400
+        return jsonify({"error": "request must contain JSON DATA"}), 400
     
     # check for required fields
     if 'phone_numbers' not in data:
-        return jsonify({"error: missing required field phone_numbers"}), 400
+        return jsonify({"error": "missing required field phone_numbers"}), 400
     if 'message' not in data:
-        return jsonify({"error: missing required field message"}), 400
+        return jsonify({"error": "missing required field message"}), 400
     if not isinstance(data['phone_numbers'], list):
-        return jsonify({"error: phone numbers must be a list"}), 400
+        return jsonify({"error": "phone numbers must be a list"}), 400
 
 
     # fetch the data from the request and store in variables
