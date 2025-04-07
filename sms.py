@@ -120,11 +120,13 @@ def send_sms_task(phone_number, message, provider_endpoint= None):
         endpoint = provider_endpoint if provider_endpoint else SMS_API_KEY
 
         if not endpoint:
-            return {
+            result {
                 "status":500,
                 "response":"No SMS Provider enpoint provided",
                 "success":False
             }
+            update_message_status(task_id, 'failed', 'No SMS provider endpoint configured', 500)
+            return result
 
         # this gives the payload structure of how data is sent to the API endpoint
         payload = {
@@ -137,13 +139,22 @@ def send_sms_task(phone_number, message, provider_endpoint= None):
         # fetch the response after sending the payload
         response = requests.post(endpoint, json=payload)
 
-        return{
+        result = {
             "status":response.status_code,
             "response":response.text,
             "success":response.ok,
             "phone_number":phone_number
         }
+
+        # update message status
+        status = 'sent' if response.ok else 'failed'
+        update_message_status(task_id, status, response.text, response.status_code)
+        
+        return result
+
     except Exception as e:
+        error_msg = str(e)
+        update_message_status(task_id, 'failed', error_msg, 500)
         return{
             "status":500,
             "response":str(e),
