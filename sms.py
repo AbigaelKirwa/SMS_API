@@ -19,8 +19,8 @@ app.config['CELERY_RESULT_BACKEND'] = os.getenv('REDIS_URL', 'redis://localhost:
 DB_HOST = os.getenv('DB_HOST')
 DB_USER = os.getenv('DB_USER')
 DB_PASSWORD = os.getenv('DB_PASSWORD')
-DB_NAME = os.getenv('DB_NAME', 'sms_service')
-DB_PORT = int(os.getenv('DB_PORT', 3306))
+DB_NAME = os.getenv('DB_NAME')
+DB_PORT = int(os.getenv('DB_PORT'))
 
 
 # initialize celery 
@@ -55,7 +55,7 @@ def get_db_connection():
 def create_messages_table():
     """Create a message table if it does not exist"""
     conn = get_db_connection()
-    
+
 
 @celery.task
 def send_sms_task(phone_number, message, provider_endpoint= None):
