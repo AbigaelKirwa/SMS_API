@@ -55,7 +55,31 @@ def get_db_connection():
 def create_messages_table():
     """Create a message table if it does not exist"""
     conn = get_db_connection()
-
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS sms_messages(
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    phone_number VARCHAR(20) NOT NULL,
+                    message TEXT NOT NULL,
+                    status VARCHAR(20) DEFAULT 'pending',
+                    provider_response TEXT,
+                    response_code INT,
+                    task_id VARCHAR(50),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_phone_number (phone_number),
+                    INDEX idx_status (status),
+                    INDEX idx_task_id (task_id),
+                )ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """)
+        conn.commit()
+    finally:
+        conn.close()
+    
+# create table when app starts
+with app.app_context():
+    create_messages_table()
 
 @celery.task
 def send_sms_task(phone_number, message, provider_endpoint= None):
