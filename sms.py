@@ -1,16 +1,28 @@
 from flask import Flask, request, jsonify
 from celery import Celery
 from dotenv import load_dotenv
-import requests
 import os
-from config import celery, SMS_API_ENDPOINT, SMS_API_KEY, SMS_SENDER_ID, SMS_ACCESS_KEY, SMS_CLIENT_ID
+from config import SMS_API_ENDPOINT, SMS_API_KEY, SMS_SENDER_ID, SMS_ACCESS_KEY, SMS_CLIENT_ID
 from dbconfig import get_db_connection, create_messages_table
+from send_sms_bridge import send_sms_bridge
 
 # load content from .env file
 load_dotenv()
 
 # configure flask app
 app = Flask(__name__)
+
+# configure celery
+app.config['CELERY_BROKER_URL'] = os.getenv('REDIS_URL')
+app.config['CELERY_RESULT_BACKEND'] = os.getenv('REDIS_URL')
+
+# initialize celery 
+celery = Celery(
+    app.name,
+    broker = app.config['CELERY_BROKER_URL'],
+    backend = app.config['CELERY_RESULT_BACKEND']
+)
+celery.conf.update(app.config)
 
 # store the message in memory
 messages = []   
@@ -34,78 +46,15 @@ def save_message_to_db(phone_number, message, task_id):
     finally:
         conn.close()
 
-# update messages table in the db
-def update_message_status(task_id, status, provider_response=None, response_code=None):
-    """Update message status in database"""
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            sql = """
-                UPDATE sms_messages
-                SET status = %s, provider_response = %s, response_code = %s, updated_at = NOW()
-                WHERE task_id = %s
-            """
-            cursor.execute(sql, (status, provider_response, response_code, task_id))
-        conn.commit()
-    finally:
-        conn.close()
-
 @celery.task(bind=True)
-def send_sms_task(self, phone_number, message, provider_endpoint= None):
+def send_sms_task(self, phone_number, message):
     """ Celery task to send an SMS to the specified phone number """
+    number = phone_number
+    text = message
     task_id = self.request.id
-    try:
-        # use provider-specific enpoint if provided otherwise use default
-        endpoint = provider_endpoint if provider_endpoint else SMS_API_ENDPOINT
 
-        if not endpoint:
-            result = {
-                "status":500,
-                "response":"No SMS Provider enpoint provided",
-                "success":False
-            }
-            update_message_status(task_id, 'failed', 'No SMS provider endpoint configured', 500)
-            return result
-
-        # this gives the payload structure of how data is sent to the API endpoint
-        payload = {
-            "ApiKey": SMS_API_ENDPOINT,
-            "Number": phone_number,
-            "Text": message,
-            "SenderId": SMS_SENDER_ID,
-            "ClientId": SMS_CLIENT_ID
-        }
-        # adding the header structure
-        header = {
-            "content-type": "application/json",
-            "AcessKey": SMS_ACCESS_KEY
-        }
-
-        # fetch the response after sending the payload
-        response = requests.post(endpoint, json=payload, headers=headers)
-
-        result = {
-            "status":response.status_code,
-            "response":response.text,
-            "success":response.ok,
-            "phone_number":phone_number
-        }
-
-        # update message status
-        status = 'sent' if response.ok else 'failed'
-        update_message_status(task_id, status, response.text, response.status_code)
-        
-        return result
-
-    except Exception as e:
-        error_msg = str(e)
-        update_message_status(task_id, 'failed', error_msg, 500)
-        return{
-            "status":500,
-            "response":str(e),
-            "success":False,
-            "phone_number":phone_number
-        }
+    # call the send sms function
+    send_sms_bridge(number, text, task_id)
 
 @app.route('/send-bulk-sms', methods=['POST'])
 def send_bulk_sms():
@@ -127,26 +76,27 @@ def send_bulk_sms():
     # fetch the data from the request and store in variables
     phone_numbers = data['phone_numbers']
     message = data['message']
-    provider_endpoint = data.get('provider_endpoint', None)
 
     # creating an empty list that will store task ids
     task_ids=[]
 
     # queue an sms task for every phone number
     for phone_number in phone_numbers:
+        #format phone number
+        number = "{}{}".format("254", phone_number.replace(" ","")[-9:])
         #store the message
         messages.append({
-            "phone_number":phone_number,
+            "phone_number":number,
             "message":message,
         })
     
         # calling the celery function that will interact with the message API
-        task = send_sms_task.delay(phone_number, message, provider_endpoint)
+        task = send_sms_task.delay(number, message)
 
         #save messages to db
-        save_message_to_db(phone_number, message, task.id)
+        save_message_to_db(number, message, task.id)
 
-        task_ids.append({"phone_number":phone_number, "task_id":task.id})
+        task_ids.append({"phone_number":number, "task_id":task.id})
 
     return jsonify({
         "status":f"Bulk SMS successfully sent for {len(phone_numbers)} recepients",

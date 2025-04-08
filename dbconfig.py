@@ -1,4 +1,5 @@
 import pymysql
+import os
 
 # database configuration
 DB_HOST = os.getenv('DB_HOST')
